@@ -53,40 +53,59 @@ struct Device: Hashable, Codable {
     }
 }
 
+/// Backing store for the device list. Scanners write from background queues while
+/// views read on the main queue, so every access goes through the lock here.
+final class DeviceStore {
+    static let shared = DeviceStore()
+
+    // Recursive: callers read then write in the same turn, and a nested lock must not deadlock.
+    private let mutex = NSRecursiveLock()
+    private var devices: [Device] = []
+
+    private init() {}
+
+    func snapshot() -> [Device] {
+        mutex.lock()
+        defer { mutex.unlock() }
+        return devices
+    }
+
+    func update(_ device: Device) {
+        mutex.lock()
+        defer { mutex.unlock() }
+        if let index = devices.firstIndex(where: { $0.deviceName == device.deviceName }) {
+            devices[index] = device
+        } else {
+            devices.append(device)
+        }
+    }
+
+    func setIsHidden(_ hidden: Bool, name: String) {
+        mutex.lock()
+        defer { mutex.unlock() }
+        for index in devices.indices where devices[index].deviceName == name {
+            devices[index].isHidden = hidden
+        }
+    }
+}
+
 class AirBatteryModel {
-    static var lock = false
-    static var Devices: [Device] = []
+    static let store = DeviceStore.shared
     static let machineType = ud.string(forKey: "machineType") ?? "Mac"
     static let key = "com.lihaoyun6.AirBattery.widget"
-    
+
+    static var Devices: [Device] { store.snapshot() }
+
     static func updateDevice(_ device: Device) {
-        //let blockedItems = (ud.object(forKey: "blockedDevices") as? [String]) ?? [String]()
-        //if blockedItems.contains(device.deviceName) { return }
-        if lock { return }
-        lock = true
-        //self.Devices.removeAll(where: {blockedItems.contains($0.deviceName)})
-        if let index = self.Devices.firstIndex(where: { $0.deviceName == device.deviceName }) {
-            self.Devices[index] = device
-        } else {
-            self.Devices.append(device)
-        }
-        lock = false
+        store.update(device)
     }
-    
+
     static func hideDevice(_ name: String) {
-        for index in Devices.indices {
-            if Devices[index].deviceName == name {
-                Devices[index].isHidden = true
-            }
-        }
+        store.setIsHidden(true, name: name)
     }
-    
+
     static func unhideDevice(_ name: String) {
-        for index in Devices.indices {
-            if Devices[index].deviceName == name {
-                Devices[index].isHidden = false
-            }
-        }
+        store.setIsHidden(false, name: name)
     }
     
     static func getBlackList() -> [Device] {
@@ -100,7 +119,9 @@ class AirBatteryModel {
         let disappearTime = (ud.object(forKey: "disappearTime") ?? 20) as! Int
         let blackList = (ud.object(forKey: "blackList") ?? []) as! [String]
         let now = Double(Date().timeIntervalSince1970)
-        var list = (reverse ? Array(Devices.reversed()) : Devices).filter { (now - $0.lastUpdate < Double(disappearTime * 60)) }
+        let all = store.snapshot()
+        let ordered: [Device] = reverse ? Array(all.reversed()) : all
+        var list = ordered.filter { (now - $0.lastUpdate < Double(disappearTime * 60)) }
         if !noFilter { list = list.filter { !blackList.contains($0.deviceName) && !$0.isHidden } }
         var newList: [Device] = list.filter({ $0.parentName == thisMac })
         for d in list {
