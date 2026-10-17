@@ -343,7 +343,7 @@ func getPowerState() -> iBattery {
     if let internalBattery = internalFinder.getInternalBattery() {
         if let level = internalBattery.charge {
             var ib = iBattery(hasBattery: true, isCharging: internalBattery.isCharging ?? false, isCharged :internalBattery.isCharged ?? false, acPowered: internalBattery.acPowered ?? false, timeLeft: internalBattery.timeLeft, batteryLevel: Int(level))
-            if #available(macOS 12.0, *) { ib.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled }
+            ib.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
             return ib
         }
     }
@@ -423,7 +423,7 @@ func getMacDeviceType() -> String {
 
 func getMacDeviceUUID() -> String? {
     let dev = IOServiceMatching("IOPlatformExpertDevice")
-    let platformExpert: io_service_t = IOServiceGetMatchingService(kIOMasterPortDefault, dev)
+    let platformExpert: io_service_t = IOServiceGetMatchingService(kIOMainPortDefault, dev)
     if platformExpert != 0 {
         if let serialNumberAsCFString = IORegistryEntryCreateCFProperty(platformExpert, kIOPlatformUUIDKey as CFString, kCFAllocatorDefault, 0)?.takeUnretainedValue() {
             IOObjectRelease(platformExpert)

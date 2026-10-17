@@ -20,11 +20,7 @@ extension View {
 
 extension WidgetConfiguration {
     func disableContentMarginsIfNeeded() -> some WidgetConfiguration {
-        if #available(macOS 12.0, *) {
-            return self.contentMarginsDisabled()
-        } else {
-            return self
-        }
+        return self.contentMarginsDisabled()
     }
     
     func supportFamily() -> some WidgetConfiguration {
