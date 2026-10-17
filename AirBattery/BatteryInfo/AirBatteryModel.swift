@@ -29,6 +29,29 @@ enum AppSettings {
     static var disappearTime: Int { integer("disappearTime", fallback: 20) }
 }
 
+/// The shared files between the app, the widget process and the `abt` tool.
+///
+/// There is no app group: the unsandboxed main app writes straight into the sandboxed
+/// widget container, which the widget sees as its own Documents. So the same logical
+/// directory has two spellings depending on which process is asking.
+enum WidgetData {
+    static let bundleKey = "com.lihaoyun6.AirBattery.widget"
+
+    private static var isWidgetProcess: Bool { Bundle.main.bundleIdentifier == bundleKey }
+
+    private static var documents: URL {
+        if isWidgetProcess {
+            return fd.urls(for: .documentDirectory, in: .userDomainMask).first!
+        }
+        return fd.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Containers/\(bundleKey)/Data/Documents")
+    }
+
+    static var jsonURL: URL { documents.appendingPathComponent("data.json") }
+    static var singleDeviceNameURL: URL { documents.appendingPathComponent("singleDeviceName") }
+    static var nearcastFolder: URL { documents.appendingPathComponent("NearcastData") }
+}
+
 struct btdDevice: Codable, Equatable {
     let time: Date
     let vid: String
@@ -114,7 +137,7 @@ final class DeviceStore {
 class AirBatteryModel {
     static let store = DeviceStore.shared
     static let machineType = ud.string(forKey: "machineType") ?? "Mac"
-    static let key = "com.lihaoyun6.AirBattery.widget"
+    static let key = WidgetData.bundleKey
 
     static var Devices: [Device] { store.snapshot() }
 
@@ -169,32 +192,17 @@ class AirBatteryModel {
     }
     
     static func singleDeviceName() -> String {
-        var url: URL
-        let bundleIdentifier = Bundle.main.bundleIdentifier
-        if bundleIdentifier == key {
-            url = fd.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("singleDeviceName")
-            let devicename = try? String(contentsOf: url, encoding: .utf8)
-            return devicename ?? ""
-        } else {
-            url = fd.urls(for: .libraryDirectory, in: .userDomainMask).first!.appendingPathComponent("Containers/\(key)/Data/Documents/singleDeviceName")
-            try? ud.string(forKey: "deviceOnWidget")?.write(to: url, atomically: true, encoding: .utf8)
+        if Bundle.main.bundleIdentifier == key {
+            return (try? String(contentsOf: WidgetData.singleDeviceNameURL, encoding: .utf8)) ?? ""
         }
+        // The widget picks its device through this file; only the app can write it.
+        try? ud.string(forKey: "deviceOnWidget")?.write(to: WidgetData.singleDeviceNameURL, atomically: true, encoding: .utf8)
         return ""
     }
     
-    static func getJsonURL() -> URL {
-        var url: URL
-        let bundleIdentifier = Bundle.main.bundleIdentifier
-        if bundleIdentifier == key {
-            url = fd.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("data.json")
-        } else {
-            url = fd.urls(for: .libraryDirectory, in: .userDomainMask).first!.appendingPathComponent("Containers/\(key)/Data/Documents/data.json")
-        }
-        return url
-    }
+    static func getJsonURL() -> URL { WidgetData.jsonURL }
     
     static func writeData(){
-        //let showMac = ud.object(forKey: "showMacOnWidget") as? Bool ?? true
         let revList = ud.object(forKey: "revListOnWidget") as? Bool ?? false
         
         var devices = getAll(reverse: revList)
@@ -202,7 +210,9 @@ class AirBatteryModel {
         if ibStatus.hasBattery { devices.insert(ib2ab(ibStatus), at: 0) }
         do {
             let jsonData = try JSONEncoder().encode(devices)
-            try jsonData.write(to: getJsonURL())
+            // Atomic: the widget process reads this file on its own schedule and must
+            // never decode a half-written buffer.
+            try jsonData.write(to: getJsonURL(), options: .atomic)
         } catch {
             print("Write JSON error：\(error)")
         }
