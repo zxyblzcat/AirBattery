@@ -441,7 +441,7 @@ struct BlacklistView: View {
                         }
                     }
             }
-            .onAppear { blockedItems = (ud.object(forKey: "blockedDevices") as? [String]) ?? [String]() }
+            .onAppear { blockedItems = AppSettings.blockedDevices }
             .onChange(of: blockedItems) { b in ud.setValue(b, forKey: "blockedDevices") }
         }
     }

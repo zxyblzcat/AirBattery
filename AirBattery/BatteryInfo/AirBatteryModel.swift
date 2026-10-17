@@ -7,6 +7,28 @@
 
 import Foundation
 
+/// Typed reads for the settings the device list depends on.
+/// These keys are written by SwiftUI bindings, AppleScript, the widget, older app
+/// versions and hand edits, so a value of the wrong shape has to fall back to the
+/// default instead of trapping the whole cast.
+enum AppSettings {
+    private static func strings(_ key: String, fallback: [String] = []) -> [String] {
+        guard let raw = ud.array(forKey: key) else { return fallback }
+        return raw.compactMap { $0 as? String }
+    }
+
+    private static func integer(_ key: String, fallback: Int) -> Int {
+        guard let value = ud.object(forKey: key) else { return fallback }
+        return (value as? Int) ?? fallback
+    }
+
+    static var pinnedList: [String] { strings("pinnedList") }
+    static var blackList: [String] { strings("blackList") }
+    static var blockedDevices: [String] { strings("blockedDevices") }
+    static var neverRemindMe: [String] { strings("neverRemindMe") }
+    static var disappearTime: Int { integer("disappearTime", fallback: 20) }
+}
+
 struct btdDevice: Codable, Equatable {
     let time: Date
     let vid: String
@@ -109,15 +131,15 @@ class AirBatteryModel {
     }
     
     static func getBlackList() -> [Device] {
-        let blackList = (ud.object(forKey: "blackList") ?? []) as! [String]
+        let blackList = AppSettings.blackList
         let devices = getAll(noFilter: true)
         return devices.filter({ blackList.contains($0.deviceName) })
     }
     
     static func getAll(reverse: Bool = false, noFilter: Bool = false) -> [Device] {
         let thisMac = ud.string(forKey: "deviceName")
-        let disappearTime = (ud.object(forKey: "disappearTime") ?? 20) as! Int
-        let blackList = (ud.object(forKey: "blackList") ?? []) as! [String]
+        let disappearTime = AppSettings.disappearTime
+        let blackList = AppSettings.blackList
         let now = Double(Date().timeIntervalSince1970)
         let all = store.snapshot()
         let ordered: [Device] = reverse ? Array(all.reversed()) : all
@@ -198,7 +220,7 @@ class AirBatteryModel {
     }
     
     static func ncGetAll(url: URL, fromWidget: Bool = false) -> [Device] {
-        let disappearTime = (ud.object(forKey: "disappearTime") ?? 20) as! Int
+        let disappearTime = AppSettings.disappearTime
         let devices = readData(url: url)
         let now = Double(Date().timeIntervalSince1970)
         var localDevices = getAll().map({ $0.deviceName })
@@ -211,7 +233,7 @@ class AirBatteryModel {
     
     static func checkIfBlocked(name: String) -> Bool {
         let whitelistMode = ud.bool(forKey: "whitelistMode")
-        let blockedItems = (ud.object(forKey: "blockedDevices") as? [String]) ?? [String]()
+        let blockedItems = AppSettings.blockedDevices
         if (blockedItems.contains(name) && !whitelistMode) || (!blockedItems.contains(name) && whitelistMode) {
             return true
         }
