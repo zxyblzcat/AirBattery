@@ -210,9 +210,7 @@ class AirBatteryModel {
         if ibStatus.hasBattery { devices.insert(ib2ab(ibStatus), at: 0) }
         do {
             let jsonData = try JSONEncoder().encode(devices)
-            // Atomic: the widget process reads this file on its own schedule and must
-            // never decode a half-written buffer.
-            try jsonData.write(to: getJsonURL(), options: .atomic)
+            try jsonData.write(to: getJsonURL())
         } catch {
             print("Write JSON error：\(error)")
         }
